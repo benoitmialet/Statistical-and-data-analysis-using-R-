@@ -7,13 +7,13 @@ Here are some statistical analyses I made during my studies at DSTI, using R Mar
 
 Following analysis were performed:
 * Linear model: building a model, checking assumptions on the noise and comparing several methods of variable selection
-* Point estimation: estimation of an exponential distribution lambda parameter, with several methods
+* Distribution fitting and point estimation: Fitting of an exponential distribution and estimation of lambda parameter, with several methods
 
 
 
 ## Datasets
 Following datasets were used. some of them are commonly used in education, some other were found on Kaggle.
-* Data1.dat (Point estimation) : set of time arrival between points
+* Data1.txt (Distribution fitting) : set of time arrival between several points
 * ukcomp1_r.dat (Linear model): training set
 * ukcomp2_r.dat (Linear model): testing set
 
