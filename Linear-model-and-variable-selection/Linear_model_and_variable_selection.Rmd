@@ -1,0 +1,390 @@
+---
+title: "Linear Model and Variable Selection"
+author: "Benoit Mialet"
+date: "02/12/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Working directory setting:
+```{r}
+setwd("D:/Formations/DSTI/2021 07 - Advanced stats and ML/assignment")
+```
+
+
+***
+This study uses two datasets : ukcomp1_r.dat (training set) and ukcomp2_r.dat (testing set). My objective is to explain the variable RETCAP by the others ans try to identify the variables really needed for the explanation. 
+
+
+
+To answer the question I will proceed as following: 
+
+
+
+1. Import data files into dataframes, and look at the data
+2. First look at the correlation between explanatory variables
+3. Construct a first linear model and check properties of the noise (distribution, variance)
+4. Using the Learning sample, construct several models, one for each of the following variable selection methods:
+    * Methods using correction of $\alpha$:
+      + Variable selection using Bonferroni correction
+      + Variable selection using Benjamini & Hocheberg correction
+    * Stepwise selection with different criteria:
+      + F (Fisher criterion)
+      + AIC (Akaike Information Criterion)
+      + BIC (Bayesian Information Criterion)
+    * Penalizing method: Lasso method combined with a cross validation method
+    * Random Forest method
+5. Compute and compare Testing error ($||\hat{Y}-Y||^2$) for each model, thanks to the testing sample, and then select the model with the minimum Testing error, as my best and final model.
+
+
+## I) Data handling and first look to the data
+
+I first import each dataset into a dataframe and name them *ukcomp_train* and *ukcomp_test* for more clarity:
+```{r}
+ukcomp_train <- read.table(
+  "ukcomp1_r.dat", header=TRUE, 
+  sep="",dec=".", 
+  fileEncoding="latin1", 
+  check.names=FALSE)
+
+ukcomp_test <- read.table(
+  "ukcomp2_r.dat", 
+  header=TRUE, 
+  sep="",dec=".", 
+  fileEncoding="latin1", 
+  check.names=FALSE
+  )
+```
+
+
+
+I observe some basic information about the data: dimension of the dataframe, type (class) of variables, number of NA values, and first observations
+```{r}
+str(ukcomp_train)
+
+sum(is.na(ukcomp_train))
+sum(is.na(ukcomp_test))
+
+head(ukcomp_train,10)
+head(ukcomp_test,10)
+```
+Here, all variables are numerical with no missing value.
+
+In the following, I will use train sample for observation of correlations and for variable selection.
+
+
+## II) Correlation between explanatory variables
+
+Visualization of correlations between explanatory variables can give an idea of which one are strongly correlated. It doesn't allow any variable selection but can help to explain why one variable will be selected over another correlated one, during variable selection step.
+```{r}
+library(corrplot)
+corrplot(cor(ukcomp_train[,-1],use="complete.obs"),method="circle") #I exclude response variable #1
+cor(ukcomp_train[,-1])
+
+```
+I observe strong correlations between some variable. I thus expect that the variable selection methods will potentially discard some variables.
+
+
+
+I also use another graphical representation that can indicate type of relation (linear, not linear) between pairs of variables.
+```{r}
+pairs(ukcomp_train, main = "Ukcomp training dataset", pch = ".")
+```
+
+
+
+## III) Multiple linear regression model and noise properties checking
+
+### III.1) linear model construction
+I build a first linear model to be used in further computations:
+```{r}
+model = lm(RETCAP~.,data = ukcomp_train)
+summary(model)
+```
+The p-value of the Fisher test, associated to the null hypothesis $\mathcal{H}_0$ stating that all coefficients are not different from 0, is very low. I thus should consider that one or more variables have an influence on the response variable RETCAP and that their respective coefficient are different from 0. However, **this p-value is to be used only in a gaussian setting**, that's why I have to check first the gaussianity of the distribution of the noise.
+
+
+### III.2) Gaussianity of the distribution of the noise
+Before selecting variables, I have to check several conditions in order to validate the linear model.
+
+I first check gaussianity of the distribution of the noise. To do this, I use standardized residuals, because residuals can have different distributions. I will then perform a goodness of fit test (Kolmogorov-Smirnov test) to compare standardized residuals distribution with a standard normal distribution:
+```{r}
+st_residuals=rstandard(model)
+ks.test(st_residuals, pnorm)
+```
+I accept Null Hypothesis as p-value obtained is very high: the standardized residuals distribution is assumed to be same as a standard normal distribution.
+
+
+In order to visualize and confirm the result:
+
+* I plot the histogram of the distribution of standardized residuals, I compare this distribution with the probability density function of a standard normal distribution (in red)
+* I also plot a QQ-plot comparing quantiles of both distributions
+```{r}
+# Density histogram
+hist(st_residuals, freq=FALSE, ylim =c(0,0.4))
+curve(dnorm(x, mean = 0, sd = 1), from = -3, col = "red", add = TRUE)
+
+# QQ-PLOT
+qqnorm(st_residuals, main = "Normal Q-Q Plot",
+       xlab = "Theoretical Quantiles", ylab = "Sample Quantiles",
+       plot.it = TRUE, datax = FALSE)
+qqline(st_residuals, datax = FALSE, distribution = qnorm,
+       probs = c(0.25, 0.75), qtype = 7, col='red')
+```
+On both graphs, distribution of standardized residuals looks normal
+
+
+
+
+### III.3) Variance of the noise
+I then check if variance of the noise is constant, by visualization. I will check following conditions:
+
+* Distribution of the noise must be Centered
+* Distribution of the noise must be Symmetric
+* Variance of the noise must stay Constant (no pattern should be visible)
+
+
+
+Two options are available for this, leading to the same observations:
+
+OPTION 1: using plot with lm() model
+```{r}
+plot(model)
+```
+
+OPTION 2: using a custom function that plots residuals on Y axis and fitted values on X axis:
+```{r}
+plot.res=function(x, y, title = "", label_x = "", label_y = "")
+{
+  plot(x,y,col='blue',main=title, xlab = label_x, ylab = label_y)
+  abline(h=0,col='green')
+}
+plot.res(predict(model),st_residuals,"",'fitted values','Standardized Residuals')
+
+student_residuals=rstudent(model)
+
+plot.res(predict(model),student_residuals,"",'fitted values','Studendized Residuals')
+```
+
+Considering that:
+
+* Most of the standardized residual values are between -2 and +2, except for one outlier
+* There are approximately as many negative and positive values
+* The shape of the noise remains constant with increasing fitted values
+
+I consider that distribution of the noise is centered, symmetric and constant.
+
+
+CONCLUSION of III) : I assume the distribution of noise to be **gaussian**, **centered**, **symmetric** and **constant**. All the conditions are thus valid to build a linear regression model.
+
+
+## IV) VARIABLE SELECTION
+
+### IV.1) Bonferroni correction (non penalizing)
+
+I arbitrary chose a risk level $\alpha = 0.05$.
+
+I first compute the rank of the explanatory variable matrix and then I compute a value for a Bonferroni adjusted risk level alpha:
+```{r}
+library(Matrix)
+rank <- rankMatrix(as.matrix(ukcomp_train[,-1]))[1]
+bonferroni_adjusted_alpha <- 0.05 / (rank-1)
+bonferroni_adjusted_alpha
+```
+
+
+I observe which variable to select by keeping only ones for which p-value is < bonferroni_adjusted_alpha:
+```{r}
+summary(model)
+```
+only variable *LOGSALE* should be selected with this method.
+
+
+The linear model would be thus:
+```{r}
+model_final_BONFERRONI <- lm(RETCAP ~ LOGSALE, data = ukcomp_train)
+```
+It is actually a simple linear model.
+
+
+### IV.2) Benjamini & Hocheberg correction (non penalizing)
+
+I first get the set of p-values from model summary, then I use the function p.adjust with Benjamini & Hocheberg method ("fdr"):
+```{r}
+pvalues_model_raw <- summary(model)$coeff[,4]
+pvalues_model_adjusted <- p.adjust(pvalues_model_raw, "fdr")
+pvalues_model_adjusted
+```
+
+Here we again select only variable *LOGSALE* with an adjusted p-value < alpha. The model will the the same as the one obtained with Bonferroni correction.
+
+
+
+### IV.3) Stepwise selection with Fisher criterion
+
+```{r}
+library(MASS)
+model_final_STEPWISE_F <- stepAIC(model,~.,direction=c("both"),test="F")
+summary(model_final_STEPWISE_F)
+```
+7 explanatory variables are selected.
+
+
+### IV.4) Stepwise selection with AIC criterion
+I proceed to the variable selection:
+```{r}
+model_final_STEPWISE_AIC <- stepAIC(model,~.,direction=c("both"))
+
+```
+12 explanatory variables are selected.
+
+
+### IV.5) Stepwise selection with BIC criterion
+
+BIC criterion uses the number of observations. I compute them first and then proceed to the variable selection:
+```{r}
+nb_obs <- length(ukcomp_train$RETCAP)
+model_final_STEPWISE_BIC <- stepAIC(model,~.,direction=c("both"),k=log(nb_obs))
+summary(model_final_STEPWISE_BIC)
+```
+4 explanatory variables are selected.
+
+
+
+### IV.6) Lasso Method (+ cross validation)
+
+I perform a cross validation method to select variables (based on the training sample), combined with the lasso method (by fixing alpha=1). As a regularization, Lasso method uses a penalized criterion $\lambda$ to select the best compromise between model fitting and model complexity. For this task, I arbitrary set a gradient of 50 lambda values that will be generated, from 0 to a strongly penalizing value, and a default number of 10 folds.
+```{r}
+library(glmnet)
+model_cv = cv.glmnet(as.matrix(ukcomp_train[,-1]), 
+                     ukcomp_train[,1], family="gaussian", 
+                     nlambda=50, nfolds = 10, alpha=1)
+model_cv #shows min and 1SE models
+plot(model_cv)
+
+```
+
+The best model will be the one with the minimum Mean-Squared Error. As I am looking for a  compromise between fitting and complexity, I will take the model for which Lambda is equal to the minimum value + 1 times standard error. I then do a new variable selection with Lasso method, with this value of Lambda+1SE, and will keep the selected variables:
+```{r}
+model_LASSO = glmnet(as.matrix(ukcomp_train[,-1]),
+                     as.matrix(ukcomp_train[,1]),family="gaussian",
+                     alpha=1,lambda = model_cv$lambda.1se)
+model_LASSO$beta   #estimated beta vector
+```
+7 explanatory variables are selected.
+
+
+I keep all explanatory variables given with a coefficient (all except those annotated ".") by the previous glmnet() function. I build a final model to obtain unbiased values for coefficients:
+```{r}
+model_final_LASSO = lm(RETCAP ~ CAPINT + LOGSALE + CURRAT 
+                       + NFATAST + FATTOT + PAYOUT + WCFTCL, data=ukcomp_train)
+summary(model_final_LASSO)
+model_final_LASSO$coefficients
+```
+
+
+### IV.7) Random Forest
+
+```{r echo = FALSE} 
+library(randomForest)
+```
+
+To build a model from a Random Forest process, I will use default parameters, with 500 trees generated and a number of explanatory variables equal to the square root of the total number of explanatory variables (as suggested for regression models).
+
+```{r}
+p = dim(ukcomp_train[-1])[2] #number of explanatory variables
+RF = randomForest(RETCAP~.,data=ukcomp_train, mtry = sqrt(p), ntree = 500, importance = TRUE)
+```
+
+
+
+```{r}
+RF
+names(RF)
+RF$importance
+```
+
+The % of variable explanation is low. And the % of increase of Mean Squared Error for each variable permutation is also low. The model may likely not show good results on testing error.
+
+
+
+## V) Computing testing errors and selection of the best model
+
+For each model, I compute:
+
+* predicted values $\hat{Y}$ on testing sample
+* residuals, as $\hat{Y}-Y$ vector
+* testing error, as the mean of squared residual values
+
+```{r}
+# Testing error for selection using Bonferroni correction
+pred_test_BONFERRONI <- predict(model_final_BONFERRONI,newdata = ukcomp_test)
+residuals_test_BONFERRONI <- pred_test_BONFERRONI - ukcomp_test$RETCAP
+test_error_BONFERRONI <- mean(residuals_test_BONFERRONI**2)
+
+# Testing error for selection using Benjamini & Hocheberg correction: same as for Bonferroni
+
+# Testing error for stepwise selection using Fisher criterion
+pred_test_STEPWISE_F <- predict(model_final_STEPWISE_F,newdata = ukcomp_test)
+residuals_test_STEPWISE_F <- pred_test_STEPWISE_F - ukcomp_test$RETCAP
+test_error_STEPWISE_F <- mean(residuals_test_STEPWISE_F**2)
+
+# Testing error for stepwise selection using AIC criterion
+pred_test_STEPWISE_AIC <- predict(model_final_STEPWISE_AIC,newdata = ukcomp_test)
+residuals_test_STEPWISE_AIC <- pred_test_STEPWISE_AIC - ukcomp_test$RETCAP
+test_error_STEPWISE_AIC <- mean(residuals_test_STEPWISE_AIC**2)
+
+# Testing error for stepwise selection using BIC criterion
+pred_test_STEPWISE_BIC <- predict(model_final_STEPWISE_BIC,newdata = ukcomp_test)
+residuals_test_STEPWISE_BIC <- pred_test_STEPWISE_BIC - ukcomp_test$RETCAP
+test_error_STEPWISE_BIC <- mean(residuals_test_STEPWISE_BIC**2)
+
+# Testing error for selection using Lasso method + cross validation
+pred_test_LASSO <- predict(model_final_LASSO,newdata = ukcomp_test)
+residuals_test_LASSO <- pred_test_LASSO - ukcomp_test$RETCAP
+test_error_LASSO <- mean(residuals_test_LASSO**2)
+
+# Testing error for selection using Random Forest
+pred_test_RF <- predict(RF,newdata = ukcomp_test)
+residuals_test_RF <- pred_test_RF - ukcomp_test$RETCAP
+test_error_RF <- mean(residuals_test_RF**2)
+```
+
+
+
+I then compare all the testing error values:
+```{r}
+test_error_BONFERRONI
+test_error_STEPWISE_F
+test_error_STEPWISE_AIC
+test_error_STEPWISE_BIC
+test_error_LASSO
+test_error_RF
+```
+
+
+Minimum test error value is test_error_STEPWISE_BIC. I thus keep this model as the best one.
+```{r}
+summary(model_final_STEPWISE_BIC)
+model_final_STEPWISE_BIC$coefficients
+```
+
+
+In conclusion, I can assume that the main variables explaining the return on capital employed (RETCAP) are :
+
+* WCFTDT : Ratio of working capital flow to total debt
+* LOGSALE : log to base 10 of total sales
+* CURRAT : current ratio
+* NFATAST : Ratio of net fixed assets to total assets
+
+
+The final linear model obtained to explain RETCAP will thus be:
+$$RETCAP= 0.02420409+0.6118847.WCFTDT+0.06096181.LOGSALE-0.06894891.CURRAT-0.47444843.NFATAST$$
+
