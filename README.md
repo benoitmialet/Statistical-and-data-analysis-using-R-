@@ -8,6 +8,7 @@ Here are some statistical analyses I made during my studies at DSTI, using R Mar
 Following analysis were performed:
 * Linear model: building a model, checking assumptions on the noise and comparing several methods of variable selection
 * Distribution fitting and point estimation: Fitting of an exponential distribution and estimation of lambda parameter, with several methods
+* Confidence interval computing: I built a ready to use notebook to compute confidence intervals (mean, sd, %) from a dataset
 
 
 
