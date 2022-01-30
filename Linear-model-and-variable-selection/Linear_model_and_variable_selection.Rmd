@@ -3,8 +3,8 @@ title: "Linear Model and Variable Selection"
 author: "Benoit Mialet"
 date: "02/12/2021"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 
 
@@ -15,7 +15,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Working directory setting:
 ```{r}
-setwd("D:/Formations/DSTI/2021 07 - Advanced stats and ML/assignment")
+ukcomp1_URL = ("https://github.com/benoitmialet/Statistical-and-data-analysis-using-R-/raw/main/Linear-model-and-variable-selection/ukcomp1_r.dat")
+ukcomp2_URL = ("https://github.com/benoitmialet/Statistical-and-data-analysis-using-R-/raw/main/Linear-model-and-variable-selection/ukcomp2_r.dat")
 ```
 
 
@@ -49,13 +50,14 @@ To answer the question I will proceed as following:
 I first import each dataset into a dataframe and name them *ukcomp_train* and *ukcomp_test* for more clarity:
 ```{r}
 ukcomp_train <- read.table(
-  "ukcomp1_r.dat", header=TRUE, 
+  file = ukcomp1_URL, 
+  header=TRUE, 
   sep="",dec=".", 
   fileEncoding="latin1", 
   check.names=FALSE)
 
 ukcomp_test <- read.table(
-  "ukcomp2_r.dat", 
+  file = ukcomp2_URL,
   header=TRUE, 
   sep="",dec=".", 
   fileEncoding="latin1", 
