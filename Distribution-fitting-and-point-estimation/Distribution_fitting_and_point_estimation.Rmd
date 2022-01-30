@@ -7,7 +7,7 @@ output:
   html_document: default
 ---
 
-
+ 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Working directory setting:
 ```{r}
-setwd("D:/Formations/DSTI/2021 07 - Advanced stats and ML/assignment")
+data_URL= ("https://github.com/benoitmialet/Statistical-and-data-analysis-using-R-/raw/main/Distribution-fitting-and-point-estimation/data1.txt")
 ```
 
 
@@ -46,7 +46,7 @@ To answer the question I will proceed as following:
 
 I open *data1.txt* file and store it in a dataframe:
 ```{r}
-data1 <- read.table("data1.txt", header=FALSE, col.names = "point", 
+data1 <- read.table(file = data_URL, header=FALSE, col.names = "point", 
                     sep=";",dec=".", fileEncoding="latin1", check.names=FALSE)
 
 ```
