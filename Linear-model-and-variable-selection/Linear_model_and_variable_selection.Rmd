@@ -161,7 +161,7 @@ OPTION 1: using plot with lm() model
 plot(model)
 ```
 
-OPTION 2: using a custom function that plots residuals on Y axis and fitted values on X axis:
+OPTION 2: using a custom function that plots residuals on Y axis and fitted values on X axis. Studentized residuals take into account the estimated variance of each residuals that can be different from each other :
 ```{r}
 plot.res=function(x, y, title = "", label_x = "", label_y = "")
 {
@@ -189,47 +189,8 @@ CONCLUSION of III) : I assume the distribution of noise to be **gaussian**, **ce
 
 ## IV) VARIABLE SELECTION
 
-### IV.1) Bonferroni correction (non penalizing)
 
-I arbitrary chose a risk level $\alpha = 0.05$.
-
-I first compute the rank of the explanatory variable matrix and then I compute a value for a Bonferroni adjusted risk level alpha:
-```{r}
-library(Matrix)
-rank <- rankMatrix(as.matrix(ukcomp_train[,-1]))[1]
-bonferroni_adjusted_alpha <- 0.05 / (rank-1)
-bonferroni_adjusted_alpha
-```
-
-
-I observe which variable to select by keeping only ones for which p-value is < bonferroni_adjusted_alpha:
-```{r}
-summary(model)
-```
-only variable *LOGSALE* should be selected with this method.
-
-
-The linear model would be thus:
-```{r}
-model_final_BONFERRONI <- lm(RETCAP ~ LOGSALE, data = ukcomp_train)
-```
-It is actually a simple linear model.
-
-
-### IV.2) Benjamini & Hocheberg correction (non penalizing)
-
-I first get the set of p-values from model summary, then I use the function p.adjust with Benjamini & Hocheberg method ("fdr"):
-```{r}
-pvalues_model_raw <- summary(model)$coeff[,4]
-pvalues_model_adjusted <- p.adjust(pvalues_model_raw, "fdr")
-pvalues_model_adjusted
-```
-
-Here we again select only variable *LOGSALE* with an adjusted p-value < alpha. The model will the the same as the one obtained with Bonferroni correction.
-
-
-
-### IV.3) Stepwise selection with Fisher criterion
+### IV.1) Stepwise selection with Fisher criterion
 
 ```{r}
 library(MASS)
@@ -239,7 +200,7 @@ summary(model_final_STEPWISE_F)
 7 explanatory variables are selected.
 
 
-### IV.4) Stepwise selection with AIC criterion
+### IV.2) Stepwise selection with AIC criterion
 I proceed to the variable selection:
 ```{r}
 model_final_STEPWISE_AIC <- stepAIC(model,~.,direction=c("both"))
@@ -248,7 +209,7 @@ model_final_STEPWISE_AIC <- stepAIC(model,~.,direction=c("both"))
 12 explanatory variables are selected.
 
 
-### IV.5) Stepwise selection with BIC criterion
+### IV.3) Stepwise selection with BIC criterion
 
 BIC criterion uses the number of observations. I compute them first and then proceed to the variable selection:
 ```{r}
@@ -260,7 +221,7 @@ summary(model_final_STEPWISE_BIC)
 
 
 
-### IV.6) Lasso Method (+ cross validation)
+### IV.4) Lasso Method (+ cross validation)
 
 I perform a cross validation method to select variables (based on the training sample), combined with the lasso method (by fixing alpha=1). As a regularization, Lasso method uses a penalized criterion $\lambda$ to select the best compromise between model fitting and model complexity. For this task, I arbitrary set a gradient of 50 lambda values that will be generated, from 0 to a strongly penalizing value, and a default number of 10 folds.
 ```{r}
@@ -292,7 +253,7 @@ model_final_LASSO$coefficients
 ```
 
 
-### IV.7) Random Forest
+### IV.5) Random Forest
 
 ```{r echo = FALSE} 
 library(randomForest)
@@ -326,13 +287,6 @@ For each model, I compute:
 * testing error, as the mean of squared residual values
 
 ```{r}
-# Testing error for selection using Bonferroni correction
-pred_test_BONFERRONI <- predict(model_final_BONFERRONI,newdata = ukcomp_test)
-residuals_test_BONFERRONI <- pred_test_BONFERRONI - ukcomp_test$RETCAP
-test_error_BONFERRONI <- mean(residuals_test_BONFERRONI**2)
-
-# Testing error for selection using Benjamini & Hocheberg correction: same as for Bonferroni
-
 # Testing error for stepwise selection using Fisher criterion
 pred_test_STEPWISE_F <- predict(model_final_STEPWISE_F,newdata = ukcomp_test)
 residuals_test_STEPWISE_F <- pred_test_STEPWISE_F - ukcomp_test$RETCAP
@@ -363,7 +317,6 @@ test_error_RF <- mean(residuals_test_RF**2)
 
 I then compare all the testing error values:
 ```{r}
-test_error_BONFERRONI
 test_error_STEPWISE_F
 test_error_STEPWISE_AIC
 test_error_STEPWISE_BIC
