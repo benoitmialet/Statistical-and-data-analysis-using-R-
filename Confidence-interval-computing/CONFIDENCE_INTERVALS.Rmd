@@ -183,7 +183,7 @@ library(prettyR) # for method valid.n()
 
 We use **sample variance $\hat{\sigma_{n}}^2$** (see I.1)). Confidence interval is:
 
-$$\left[ \frac{\hat{\sigma_{n}}^2.n}{C_{(1-\alpha_2;n-1)}} ; \frac{\hat{\sigma_{n}}^2.n}{C_{(\alpha_1;n-1)}} \right] $$
+$$\left[ \frac{\hat{\sigma_{n}}^2.(n-1)}{C_{(1-\alpha_2;n-1)}} ; \frac{\hat{\sigma_{n}}^2.(n-1)}{C_{(\alpha_1;n-1)}} \right] $$
 With $\alpha_1 + \alpha_2 = \alpha$
 
 ```{r}
@@ -193,8 +193,8 @@ n <- (valid.n(X, na.rm=TRUE))
 var(X)                # sample variance
 
 # exact CI
-IC_min <- var(X)*n/qchisq((1-alpha/2), n-1)
-IC_max <- var(X)*n/qchisq((alpha/2), n-1)
+IC_min <- var(X)*(n-1)/qchisq((1-alpha/2), n-1)
+IC_max <- var(X)*(n-1)/qchisq((alpha/2), n-1)
 IC_min
 IC_max
 ```
