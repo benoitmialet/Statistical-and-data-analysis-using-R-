@@ -1,4 +1,4 @@
-# Statistical-analysis-unising-R
+# Statistical-analysis-using-R
 
 
 ## The Project
