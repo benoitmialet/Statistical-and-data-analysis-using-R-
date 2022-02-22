@@ -1,0 +1,594 @@
+---
+title: "A time series Analysis"
+author: "Benoit Mialet"
+date: "22/02/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+In this work I used a dataset about power consumption in a building. The power consumption in Kw and the outdoor temperature in °C were monitored every 15 minutes for about 2 months. The objective of the work was to predict the power consumption of the building for the next 24 hours after the end of the dataset. Two predictions will be done:
+
+* A first one only using past power consumption
+* A second using outdoor temperature 
+
+I order to perform these predictions, I will build several models, compute then compare their prediction error, thanks to a train and test splitting of the dataset.
+
+
+
+***
+# I) PREDICTING POWER CONSUMPTION USING PAST POWER CONSUMPTION
+***
+
+
+```{r cars, include=FALSE}
+library(tseries)
+library(forecast) 
+library(ggplot2)
+library("readxl")
+```
+
+# 1) Data preparation 
+## 1.1) Data importation and plotting
+
+I first import the dataset and look at the content, to identify and qualify the data
+```{r}
+URL = "D:/Formations/DSTI/2022 03 - Time Series Analysis/assignment/git/Elec-train.csv"
+
+power_df <- read.table(
+  file = URL, 
+  header=TRUE, 
+  sep=";",dec=".", 
+  fileEncoding="Latin1", 
+  check.names=FALSE)
+
+head(power_df)
+```
+
+I first look at the data type and missing values.
+```{r}
+summary(power_df)
+```
+96 power values are missing (the values that need to be predicted).
+
+
+I can see that the timestamp frequency is 15 minutes. My objective is to display the time by days. To create my time series object, I will have to set a frequency of 4*24 = 96 (4 observations per hour, 24 hours per day). The first timestamp is 1:15, which is the 6th timestamp starting from 0:00. I first create my time series object based on the power data. I checked on the .csv file that NA values started from row 4507 onward, so I subsample the data from row 1 to 4507.
+
+
+```{r}
+power_ts <- ts(power_df[1:4507,2], frequency = 96, start=c(1,6))
+head(power_ts, 10)
+tail(power_ts, 10)
+```
+
+```{r}
+autoplot(power_ts) +
+ggtitle('Building power consumption')+
+xlab('Days')+
+ylab('Power consumption (KW)')
+```
+I check my period on a seasonal plot
+
+```{r}
+ggseasonplot(power_ts)
+```
+My period time seems correct. However, the end of the period seems different for some days.
+After checking, these days correspond to weekend days. In the further,  I will only keep a period of 96 because unfortunately ARIMA models didn't work with a period of 96*7.
+
+
+
+## 1.2) Splitting Train and Test data for model training
+
+The goal is to forecast **one day** of power consumption, which corresponds to **96 (24 x 4) values**. I will thus adapt my test dataset to this length, and will take the last 96 values. The remaining previous values will be my training dataset.
+
+```{r}
+power_ts_train = ts(power_df[1:(46*96-5),2], frequency = 96, start=c(1,6), end=c(46,96))
+power_ts_test = ts(power_df[(46*96-4):4507,2], frequency = 96, start=c(47,1), end=c(47,96) )
+
+autoplot(power_ts_train,series='Train') + 
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+Focus on training set and testing set junction
+
+```{r}
+autoplot(power_ts_train,series='Train') + 
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(46,48))+
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+I now have the datasets to buid some models for prediction.
+
+
+# 2) Holt-Winters Models
+
+## 2.1) Simple exponential smoothing
+
+Computing the predictions and mean square error
+
+```{r}
+model_HW_SE=HoltWinters(power_ts_train,alpha=NULL,beta=FALSE,gamma=FALSE)
+predict_HW_SE<-predict(model_HW_SE,n.ahead=96)
+
+autoplot(power_ts_train,series='Train') + 
+  autolayer(predict_HW_SE,series='SE Prediction', PI=FALSE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+```{r}
+#Root mean square error
+model_HW_SE_RMSE = sqrt(mean((predict_HW_SE-power_ts_test)^2))
+model_HW_SE_RMSE
+```
+
+## 2.2) Non seasonal Holt-Winters smoothing
+
+```{r}
+model_HW_NS=HoltWinters(power_ts_train,alpha=NULL,beta=NULL,gamma=FALSE)
+predict_HW_NS<-predict(model_HW_NS,n.ahead=96)
+
+autoplot(power_ts_train,series='Train') + 
+  autolayer(predict_HW_NS,series='NSE Prediction', PI=FALSE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+```{r}
+#Root mean square error
+model_HW_NS_RMSE = sqrt(mean((predict_HW_NS-power_ts_test)^2))
+model_HW_NS_RMSE
+```
+
+
+## 2.3) Non seasonal Holt-Winters smoothing + damping effect
+
+```{r}
+predict_HW_NS_D=holt(power_ts_train,h=96, damped = TRUE, phi = 0.8)
+
+autoplot(power_ts_train,series='Train') + 
+  autolayer(predict_HW_NS_D,series='NSE+D Prediction', PI=FALSE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+```{r}
+#Root mean square error
+model_HW_NS_D_RMSE = sqrt(mean((predict_HW_NS_D$mean-power_ts_test)^2))
+model_HW_NS_D_RMSE
+```
+The model is more flexible with the damping effect. However, simple H-W exponential smoothing and non seasonal smoothing seem not adapted for these time series, because they ignore the effect of the period.
+
+
+## 2.3) Additive seasonal Holt-Winters smoothing
+
+```{r}
+model_HW_addSE=HoltWinters(power_ts_train,alpha=NULL,beta=NULL,gamma=NULL, seasonal = 'additive')
+predict_HW_addSE<-predict(model_HW_addSE,n.ahead=96)
+
+autoplot(power_ts_train,series='Train') + 
+  autolayer(predict_HW_addSE,series='SEAdd Prediction', PI=TRUE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+```{r}
+#Root mean square error
+model_HW_addSE_RMSE = sqrt(mean((predict_HW_addSE-power_ts_test)^2))
+model_HW_addSE_RMSE
+```
+This models fits much better to the data.
+
+
+## 2.4) Additive seasonal Holt-Winters smoothing with Box-Cox transformation
+
+Unfortunately, the ets() function called by hw() function has a limit of frequency of 24. With my time series (frequency=96), it returned an error that I couldn't fix: frequency is too high for fitting:
+
+ Error : Error in ets(x, "AAA", alpha = alpha, beta = beta, gamma = gamma, phi = phi, : Frequency too high
+```{r}
+# predict = hw(power_ts_train, seasonal = 'additive', lambda = 'auto', h =96)
+# 
+# autoplot(power_ts_train,series='Train') +
+#   autolayer(predict,series='SEMult Prediction', PI=TRUE)+
+#   autolayer(power_ts_test,series='Test')+
+#   ggtitle ('Building power consumption') +
+#   xlim(c(35,48)) +
+#   xlab('Days') +
+#   ylab('Power consumption (kW)')
+```
+
+
+## 2.5) Multiplicative seasonal Holt-Winters smoothing
+
+```{r}
+model_HW_MultSE=HoltWinters(power_ts_train,alpha=NULL,beta=NULL,gamma=NULL, seasonal = 'multiplicative')
+predict_HW_MultSE<-predict(model_HW_MultSE,n.ahead=96)
+
+autoplot(power_ts_train,series='Train') + 
+  autolayer(predict_HW_MultSE,series='SEMult Prediction', PI=TRUE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+```{r}
+#Root mean square error
+model_HW_MultSE_RMSE = sqrt(mean((predict_HW_MultSE-power_ts_test)^2))
+model_HW_MultSE_RMSE
+```
+Multiplicative effect has a lower error, probably because the amplitude of values during the period tend to follow a trend, which is captured by the model.
+
+
+
+#3) ARIMA models
+
+## 3.1) Removing trend and seasonal patterns by differenciation
+
+### 3.1.a) Based on a day period
+
+Removing the seasonal pattern, based on a day period (24 hours * 4 quarters of hour)
+```{r}
+diff_power_ts = diff(power_ts, lag = (96), differences = 1)
+tsdisplay(diff_power_ts)
+``` 
+```{r}
+acf(diff_power_ts)
+``` 
+
+The time series still show a trend (ACF positive). I thus differentiate a second time.
+
+
+```{r}
+diff2_power_ts = diff(diff_power_ts)
+plot(diff2_power_ts)
+``` 
+
+```{r}
+acf(diff2_power_ts)
+``` 
+```{r}
+pacf(diff2_power_ts)
+``` 
+The model now looks stationary. The exponential decreasing shape on PACF makes me prefer an ARIMA model with  moving average, rather than autorecursive one. I will however test both of them.
+
+
+I thus check the $\mathcal{H}_0$ hypothesis : residual time series is white noise
+```{r}
+Box.test(diff2_power_ts, lag = 10, type = 'Ljung-Box')
+```
+I reject this hypothesis. Thus I should be able to model the noise with an ARIMA model.
+
+
+### 3.1.b) Based on a week period
+
+If I Remove the seasonal pattern with a week period (7 days * 24 hours * 4 quarters of hour), then a default differentiation, I obtain a more satisfying model. Unfortunately, I couldn't go further in that direction, because as I mentioned above, Arima() function doesn't accept such long periods.
+
+```{r}
+diff2_power_ts_week = diff(diff(power_ts, lag = (96*7), differences = 1))
+tsdisplay(diff2_power_ts_week)
+``` 
+
+
+## 3.2) SARIMA - moving average
+
+Based on 3.1.b), I tried an ARIMA model (moving average version) with several order parameters.
+The best one I found regarding the RMSE was the following one.
+```{r}
+model_SARIMA_MA = Arima(power_ts_train, order = c(0,1,4), seasonal = c(0,1,1), lambda = 'auto')
+```
+
+
+```{r}
+# checkresiduals(model_SARIMA_MA)
+acf(model_SARIMA_MA$residuals)
+```
+
+
+```{r}
+predict_SARIMA_MA<-forecast(model_SARIMA_MA, h=96)
+
+autoplot(power_ts_train,series='Train') +
+  autolayer(predict_SARIMA_MA,series='Prediction', PI=TRUE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+
+```{r}
+#Root mean square error
+model_SARIMA_MA_RMSE = sqrt(mean((predict_SARIMA_MA$mean-power_ts_test)^2))
+model_SARIMA_MA_RMSE
+```
+
+## 3.3) SARIMA - autoregressive
+
+Based on 3.1), I built an ARIMA model (autoregressive version) with following parameters:
+```{r}
+model_SARIMA_AR = Arima(power_ts_train, order = c(4,1,0), seasonal = c(1,1,0), lambda = 'auto')
+```
+
+
+```{r}
+checkresiduals(model_SARIMA_AR)
+```
+
+
+```{r}
+predict_SARIMA_AR<-forecast(model_SARIMA_AR, h=96)
+
+autoplot(power_ts_train,series='Train') +
+  autolayer(predict_SARIMA_AR,series='Prediction', PI=TRUE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+
+```{r}
+#Root mean square error
+model_SARIMA_AR_RMSE = sqrt(mean((predict_SARIMA_AR$mean-power_ts_test)^2))
+model_SARIMA_AR_RMSE
+```
+As suggested, the moving average SARIMA model fits better than the autorecursive one. 
+
+
+## 4) Neural Network Models
+
+### 4.1) Autoregressive NN
+
+I also try to predict consumption with a neural network. I tried several architectures. I only keep here the best one I found
+```{r}
+model_NNAR = nnetar(power_ts_train, p=40, P=1, size = 20)
+```
+
+
+```{r}
+predict_NNAR<-forecast(model_NNAR, h=96)
+
+autoplot(power_ts_train,series='Train') +
+  autolayer(predict_NNAR,series='Prediction', PI=TRUE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+```{r}
+#Root mean square error
+model_NNAR_RMSE = sqrt(mean((predict_NNAR$mean-power_ts_test)^2))
+model_NNAR_RMSE
+```
+
+
+
+# 5) RMSE comparison and selection of the best model
+
+```{r}
+cat('RMSE Holt-Winters simple exponential:',model_HW_SE_RMSE,'\n')
+cat('RMSE Non seasonal Holt-Winters:',model_HW_NS_RMSE,'\n')
+cat('RMSE Non seasonal Holt-Winters + dampling:',model_HW_NS_D_RMSE,'\n')
+cat('RMSE additive seasonal Holt-Winters:',model_HW_addSE_RMSE,'\n')
+cat('RMSE multiplicative seasonal Holt-Winters:',model_HW_MultSE_RMSE,'\n')
+cat('RMSE SARIMA - moving average:',model_SARIMA_MA_RMSE,'\n')
+cat('RMSE SARIMA - autoregressive:',model_SARIMA_AR_RMSE,'\n')
+cat('RMSE Autoregressive neural network:',model_NNAR_RMSE,'\n')
+
+```
+
+The model I will use for prediction is thus the multiplicative seasonal Holt-Winters.
+
+
+# 6) New training on the whole dataset and Prediction
+
+```{r}
+model_HW_MultSE_final=HoltWinters(power_ts,alpha=NULL,beta=NULL,gamma=NULL, seasonal = 'multiplicative')
+predict_HW_MultSE_final<-predict(model_HW_MultSE_final,n.ahead=96)
+
+autoplot(power_ts,series='Train') +
+  autolayer(predict_HW_MultSE_final,series='SEMult Prediction', PI=FALSE)+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,49)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+
+
+
+***
+# II) PREDICTING POWER CONSUMPTION USING OUTDOOR TEMPERATURE
+***
+
+
+# 1) Data preparation 
+
+## 1.1) Data importation and plotting
+
+As for power consumption data, I transform temperature data into a time series, with the same frequency, because outdoor temperature also follows a day cycle.
+
+```{r}
+temp_ts <- ts(power_df[1:4507,3], frequency = 96, start=c(1,6))
+head(temp_ts, 10)
+tail(temp_ts, 10)
+```
+
+```{r}
+autoplot(temp_ts) +
+ggtitle('Outdoor air temperature')+
+xlab('Days')+
+ylab('Temperature (°C)')
+```
+
+The season plot shows the behavior of temperature according to the hour of the day:
+```{r}
+ggseasonplot(temp_ts)
+```
+
+
+## 1.2) Splitting Train and Test data for model training
+
+As previously, the objective is to predict the power consumption for **24 hours**. As for consumption data, I will thus thus take the last day values (96 values) as my test dataset. The remaining previous values will be my training dataset.
+
+```{r}
+temp_ts_train = ts(power_df[1:(46*96-5),3], frequency = 96, start=c(1,6), end=c(46,96))
+temp_ts_test = ts(power_df[(46*96-4):4507,3], frequency = 96, start=c(47,1), end=c(47,96) )
+
+autoplot(temp_ts_train,series='Train') + 
+  autolayer(temp_ts_test,series='Test')+
+  ggtitle('Outdoor air temperature')+
+  xlab('Days')+
+  ylab('Temperature (°C)')
+```
+
+
+# 2) Regression model 
+
+
+I try to build a first model to predict power consumption, taking into account outdoor temperature. I start to check visually if the relation between both variables looks linear
+
+```{r}
+plot(temp_ts_train, power_ts_train)
+```
+
+I consider it is the case even there is a strong difference between day and night consumption.
+I also include in the model the effect of time through a trend and a seasonal effect.
+
+```{r}
+linear_model = tslm(power_ts_train~temp_ts_train+trend+season)
+summary(linear_model)
+```
+
+Coefficients for outdoor temperature, trend and most of the seasons (mostly season #26 onward) are highly significant. I now check the residuals:
+
+```{r}
+checkresiduals(linear_model)
+```
+There is still a trend, probably non linear. The residuals are correlated, so the required assumption for linear regression is not verified. I thus try to fit a SARIMA model based on the PACF.
+
+
+# 3) Dynamic regression model
+
+
+I first look at the PACF to see which order is the most significant. 
+```{r}
+pacf(linear_model$residuals)
+```
+I note the 5th one. So I try to build a SARIMA model on residuals
+
+
+```{r}
+model_res_SARIMA_MA = Arima(linear_model$residuals, order = c(5,0,0), seasonal = c(0,1,1))
+```
+
+```{r}
+checkresiduals(model_res_SARIMA_MA)
+```
+
+
+
+```{r}
+acf(model_res_SARIMA_MA$residuals)
+```
+
+The Box test is still significant but I didn't succeed to improve it. I use the previous ARIMA model on residuals to build a dynamic regression model with the time series.
+
+```{r}
+model_res_SARIMA=Arima(power_ts_train, xreg = temp_ts_train, order = c(5,0,0), seasonal = c(0,1,1))
+```
+
+```{r}
+checkresiduals(model_res_SARIMA)
+```
+
+I now compute mu RMSE to be compared with other models.
+
+
+```{r}
+predict_model_res_SARIMA = forecast(model_res_SARIMA,h=96,xreg=temp_ts_test)
+
+autoplot(power_ts_train,series='Train') +
+  autolayer(predict_model_res_SARIMA,series='Prediction', PI=TRUE)+
+  autolayer(power_ts_test,series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+
+```{r}
+#Root mean square error
+model_res_SARIMA_RMSE = sqrt(mean((predict_model_res_SARIMA$mean-power_ts_test)^2))
+model_res_SARIMA_RMSE
+```
+
+# 3) Neural network model
+
+I use the same methodology as above to build this model.
+```{r}
+model_nnar_temp = nnetar(power_ts_train, xreg = temp_ts_train)
+predict_nnar_temp = forecast(model_nnar_temp,h=96, xreg = temp_ts_test)
+
+autoplot(power_ts_train, series='Train') +
+  autolayer(predict_nnar_temp, series='Prediction', PI=TRUE)+
+  autolayer(power_ts_test, series='Test')+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,48)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
+```{r}
+#Root mean square error
+model_nnar_temp_RMSE = sqrt(mean((predict_nnar_temp$mean-power_ts_test)^2))
+model_nnar_temp_RMSE
+```
+The RMSE is less good than for dynamic regression model. I will thus use the latter to predict power consumption.
+
+
+# 4) New training on the whole dataset and Prediction
+
+I use the same methodology as above: I retrain the model on the whole dataset then perform my prediction.
+
+```{r}
+model_res_SARIMA_final=Arima(power_ts, xreg = temp_ts, order = c(5,0,0), seasonal = c(0,1,1))
+
+predict_res_SARIMA_final<-forecast(model_res_SARIMA_final,h=96, xreg = temp_ts)
+
+autoplot(power_ts,series='Train') +
+  autolayer(predict_res_SARIMA_final,series='Prediction', PI=TRUE)+
+  ggtitle ('Building power consumption') +
+  xlim(c(45,49)) +
+  xlab('Days') +
+  ylab('Power consumption (kW)')
+```
+
